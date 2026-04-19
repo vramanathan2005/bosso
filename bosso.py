@@ -704,6 +704,80 @@ with tab_analytics:
         else:
             st.warning("Not enough feature data.")
 
+    # --------------------------------------------------
+    # COMPARE PLAYERS
+    # --------------------------------------------------
+    st.markdown("---")
+    st.markdown('<div class="section-title">Compare players</div>', unsafe_allow_html=True)
+
+    compare_style_cols = [
+        "self_rate", "team_rate", "hedge_rate", "confidence_rate",
+        "gratitude_rate", "accountability_rate", "coachspeak_rate", "type_token_ratio"
+    ]
+    compare_labels = [
+        "Self focus", "Team focus", "Hedge language", "Confidence",
+        "Gratitude", "Accountability", "Coach-speak", "Vocab diversity"
+    ]
+
+    other_players = [p for p in player_list if p != selected_player]
+    compare_with = st.multiselect(
+        "Select players to compare against",
+        other_players,
+        default=[],
+        placeholder="Pick one or more players…"
+    )
+
+    if compare_with:
+        compare_pool = [selected_player] + compare_with
+        compare_rows = players[players["player_name"].isin(compare_pool)].copy()
+
+        long_rows = []
+        for _, row in compare_rows.iterrows():
+            for col, label in zip(compare_style_cols, compare_labels):
+                if col in row:
+                    long_rows.append({
+                        "Player": row["player_name"],
+                        "Signal": label,
+                        "Value": float(row[col])
+                    })
+        compare_df = pd.DataFrame(long_rows)
+
+        fig_compare = px.bar(
+            compare_df,
+            x="Signal",
+            y="Value",
+            color="Player",
+            barmode="group",
+            title=f"{selected_player} vs. {', '.join(compare_with)}"
+        )
+        fig_compare.update_layout(
+            template="simple_white",
+            height=420,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#fffdf9",
+            font=dict(color="#3d1f00", size=13),
+            title_font=dict(color="#a54700", size=15),
+            legend=dict(font=dict(size=12, color="#3d1f00"), title_text=""),
+            xaxis=dict(tickangle=-30, tickfont=dict(size=12, color="#3d1f00"), title_font=dict(color="#3d1f00")),
+            yaxis=dict(tickfont=dict(size=12, color="#3d1f00"), title_font=dict(color="#3d1f00"), title=""),
+            margin=dict(l=20, r=20, t=60, b=100)
+        )
+        fig_compare.update_traces(textfont=dict(color="#3d1f00"))
+        st.plotly_chart(fig_compare, use_container_width=True)
+
+        st.markdown('<div class="section-title" style="margin-top:0.5rem;">Side-by-side stats</div>', unsafe_allow_html=True)
+        stat_cols = ["player_name", "archetype", "avg_word_count", "n_responses"] + compare_style_cols
+        stat_cols = [c for c in stat_cols if c in players.columns]
+        stat_df = players[players["player_name"].isin(compare_pool)][stat_cols].copy()
+        stat_df = stat_df.rename(columns={"player_name": "Player", "archetype": "Archetype",
+                                           "avg_word_count": "Avg words", "n_responses": "Responses",
+                                           **dict(zip(compare_style_cols, compare_labels))})
+        stat_df = stat_df.set_index("Player")
+        st.dataframe(stat_df.style.format({l: "{:.4f}" for l in compare_labels} | {"Avg words": "{:.1f}"}),
+                     use_container_width=True)
+    else:
+        st.caption("Select at least one player above to see the comparison.")
+
 # --------------------------------------------------
 # TAB: REGRESSION
 # --------------------------------------------------
