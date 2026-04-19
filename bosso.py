@@ -211,8 +211,9 @@ st.markdown("""
     header {visibility: hidden;}
     section[data-testid="stSidebar"] {display: none;}
 
-    /* style the first (controls) column as a panel */
-    [data-testid="column"]:first-child {
+    /* controls panel — targets only the top-level first column */
+    [data-testid="stMainBlockContainer"] > div > [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child,
+    [data-testid="stMainBlockContainer"] > div > [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
         background: #fffdf9;
         border: 1px solid rgba(191,87,0,0.16);
         border-radius: 18px;
@@ -229,6 +230,21 @@ st.markdown("""
         margin-top: 0.9rem;
     }
     .ctrl-label:first-child { margin-top: 0; }
+
+    /* toggle switch wrapper */
+    [data-testid="stToggle"] {
+        background: #fff0e2;
+        border: 1px solid rgba(191,87,0,0.22);
+        border-radius: 10px;
+        padding: 0.4rem 0.75rem;
+        display: inline-flex;
+        align-items: center;
+    }
+    [data-testid="stToggle"] label {
+        color: #bf5700 !important;
+        font-weight: 700;
+        font-size: 0.85rem;
+    }
 
     .navbar {
         background: linear-gradient(90deg, #bf5700 0%, #a34a00 100%);
@@ -437,26 +453,38 @@ def metric_card(label, value, small=""):
     )
 
 # --------------------------------------------------
-# LAYOUT: left controls + right main
+# LAYOUT: toggleable left controls + right main
 # --------------------------------------------------
-col_ctrl, col_main = st.columns([1, 4], gap="medium")
+player_list = sorted(players["player_name"].dropna().astype(str).unique())
+all_years = clean_years(rows["season"]) if "season" in rows.columns else []
+all_qtypes = sorted(rows["pred_question_type"].dropna().astype(str).unique()) if "pred_question_type" in rows.columns else []
 
-with col_ctrl:
-    player_list = sorted(players["player_name"].dropna().astype(str).unique())
-    all_years = clean_years(rows["season"]) if "season" in rows.columns else []
-    all_qtypes = sorted(rows["pred_question_type"].dropna().astype(str).unique()) if "pred_question_type" in rows.columns else []
+if "panel_open" not in st.session_state:
+    st.session_state.sel_player = player_list[0]
+if "sel_years" not in st.session_state:
+    st.session_state.sel_years = all_years
+if "sel_qtypes" not in st.session_state:
+    st.session_state.sel_qtypes = all_qtypes
 
-    st.markdown('<div class="ctrl-label">Player</div>', unsafe_allow_html=True)
-    selected_player = st.selectbox("Player", player_list, label_visibility="collapsed")
+panel_open = st.toggle("Filters", value=True, key="panel_open")
 
-    st.markdown('<div class="ctrl-label">Seasons</div>', unsafe_allow_html=True)
-    selected_years = st.multiselect("Seasons", all_years, default=all_years, label_visibility="collapsed")
-
-    if all_qtypes:
-        st.markdown('<div class="ctrl-label">Question types</div>', unsafe_allow_html=True)
-        selected_qtypes = st.multiselect("Question types", all_qtypes, default=all_qtypes, label_visibility="collapsed")
-    else:
-        selected_qtypes = []
+if panel_open:
+    col_ctrl, col_main = st.columns([1, 4], gap="medium")
+    with col_ctrl:
+        st.markdown('<div class="ctrl-label">Player</div>', unsafe_allow_html=True)
+        selected_player = st.selectbox("Player", player_list, key="sel_player", label_visibility="collapsed")
+        st.markdown('<div class="ctrl-label">Seasons</div>', unsafe_allow_html=True)
+        selected_years = st.multiselect("Seasons", all_years, key="sel_years", label_visibility="collapsed")
+        if all_qtypes:
+            st.markdown('<div class="ctrl-label">Question types</div>', unsafe_allow_html=True)
+            selected_qtypes = st.multiselect("Question types", all_qtypes, key="sel_qtypes", label_visibility="collapsed")
+        else:
+            selected_qtypes = []
+else:
+    col_main = st.container()
+    selected_player = st.session_state.get("sel_player", player_list[0])
+    selected_years = st.session_state.get("sel_years", all_years)
+    selected_qtypes = st.session_state.get("sel_qtypes", all_qtypes)
 
 # --------------------------------------------------
 # FILTER DATA
@@ -484,6 +512,7 @@ with col_main:
         """,
         unsafe_allow_html=True
     )
+
 
     # --------------------------------------------------
     # KPI ROW
