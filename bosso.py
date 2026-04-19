@@ -209,6 +209,26 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    section[data-testid="stSidebar"] {display: none;}
+
+    /* style the first (controls) column as a panel */
+    [data-testid="column"]:first-child {
+        background: #fffdf9;
+        border: 1px solid rgba(191,87,0,0.16);
+        border-radius: 18px;
+        padding: 1.2rem 1rem 1.4rem 1rem !important;
+        box-shadow: 0 4px 14px rgba(191,87,0,0.07);
+    }
+    .ctrl-label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #9b5b22;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.3rem;
+        margin-top: 0.9rem;
+    }
+    .ctrl-label:first-child { margin-top: 0; }
 
     .navbar {
         background: linear-gradient(90deg, #bf5700 0%, #a34a00 100%);
@@ -245,12 +265,38 @@ st.markdown("""
     [data-baseweb="tag"] svg {
         fill: #7a3800 !important;
     }
+
+    /* white select/input boxes */
+    [data-baseweb="select"] > div,
+    [data-baseweb="input"] > div,
+    [data-baseweb="base-input"],
+    .stSelectbox > div > div,
+    .stMultiSelect > div > div {
+        background-color: #ffffff !important;
+        border-color: rgba(191,87,0,0.3) !important;
+        color: #5b2c06 !important;
+    }
+    [data-baseweb="select"] svg,
+    [data-baseweb="input"] svg {
+        fill: #bf5700 !important;
+    }
+    [data-baseweb="menu"] {
+        background-color: #ffffff !important;
+    }
+    [data-baseweb="menu"] li:hover {
+        background-color: #fff0e2 !important;
+    }
+    [data-baseweb="option"] {
+        color: #5b2c06 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------
 # LOAD DATA
 # --------------------------------------------------
+DATA_DIR = Path(__file__).parent
+
 @st.cache_data
 def load_data():
     required = [
@@ -260,14 +306,14 @@ def load_data():
         "regression_test_results.csv"
     ]
     for f in required:
-        if not Path(f).exists():
-            st.error(f"Missing file: {f}")
+        if not (DATA_DIR / f).exists():
+            st.error(f"Missing file: {DATA_DIR / f}")
             st.stop()
 
-    players = pd.read_csv("player_archetype_profiles.csv")
-    questions = pd.read_csv("question_cluster_summary.csv")
-    rows = pd.read_csv("interview_rows_with_auto_question_types.csv")
-    reg = pd.read_csv("regression_test_results.csv")
+    players = pd.read_csv(DATA_DIR / "player_archetype_profiles.csv")
+    questions = pd.read_csv(DATA_DIR / "question_cluster_summary.csv")
+    rows = pd.read_csv(DATA_DIR / "interview_rows_with_auto_question_types.csv")
+    reg = pd.read_csv(DATA_DIR / "regression_test_results.csv")
 
     if "season" in rows.columns:
         rows["season"] = pd.to_numeric(rows["season"], errors="coerce")
@@ -391,19 +437,26 @@ def metric_card(label, value, small=""):
     )
 
 # --------------------------------------------------
-# SIDEBAR
+# LAYOUT: left controls + right main
 # --------------------------------------------------
-st.sidebar.markdown("## Controls")
+col_ctrl, col_main = st.columns([1, 4], gap="medium")
 
-player_list = sorted(players["player_name"].dropna().astype(str).unique())
-selected_player = st.sidebar.selectbox("Player", player_list)
+with col_ctrl:
+    player_list = sorted(players["player_name"].dropna().astype(str).unique())
+    all_years = clean_years(rows["season"]) if "season" in rows.columns else []
+    all_qtypes = sorted(rows["pred_question_type"].dropna().astype(str).unique()) if "pred_question_type" in rows.columns else []
 
-all_years = clean_years(rows["season"]) if "season" in rows.columns else []
-selected_years = st.sidebar.multiselect("Seasons", all_years, default=all_years)
+    st.markdown('<div class="ctrl-label">Player</div>', unsafe_allow_html=True)
+    selected_player = st.selectbox("Player", player_list, label_visibility="collapsed")
 
-all_qtypes = sorted(rows["pred_question_type"].dropna().astype(str).unique()) if "pred_question_type" in rows.columns else []
-selected_qtypes = st.sidebar.multiselect("Question types", all_qtypes, default=all_qtypes)
+    st.markdown('<div class="ctrl-label">Seasons</div>', unsafe_allow_html=True)
+    selected_years = st.multiselect("Seasons", all_years, default=all_years, label_visibility="collapsed")
 
+    if all_qtypes:
+        st.markdown('<div class="ctrl-label">Question types</div>', unsafe_allow_html=True)
+        selected_qtypes = st.multiselect("Question types", all_qtypes, default=all_qtypes, label_visibility="collapsed")
+    else:
+        selected_qtypes = []
 
 # --------------------------------------------------
 # FILTER DATA
@@ -418,37 +471,38 @@ if selected_qtypes and "pred_question_type" in player_rows.columns:
 
 profile = get_profile_from_filtered(selected_player, player_row, player_rows)
 
-# --------------------------------------------------
-# HERO
-# --------------------------------------------------
-st.markdown(
-    """
-    <div class="navbar">
-        <div class="nav-brand">BOSSO Texas Football NLP Project</div>
-        <div class="nav-sub">Player Communication Scouting · 2021–2025</div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+with col_main:
+    # --------------------------------------------------
+    # HERO
+    # --------------------------------------------------
+    st.markdown(
+        """
+        <div class="navbar">
+            <div class="nav-brand">BOSSO Texas Football NLP Project</div>
+            <div class="nav-sub">Player Communication Scouting · 2021–2025</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-# --------------------------------------------------
-# KPI ROW
-# --------------------------------------------------
-k1, k2, k3, k4 = st.columns(4)
-with k1:
-    metric_card("Players profiled", f"{players.shape[0]}", "Cross-year player profiles")
-with k2:
-    metric_card("Interview responses", f"{rows.shape[0]}", "Cleaned usable rows")
-with k3:
-    metric_card("Years covered", f"{len(all_years)}", "2021 through 2025")
-with k4:
-    metric_card("Archetypes", f"{players['archetype'].nunique()}", "Communication-style groupings")
+    # --------------------------------------------------
+    # KPI ROW
+    # --------------------------------------------------
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        metric_card("Players profiled", f"{players.shape[0]}", "Cross-year player profiles")
+    with k2:
+        metric_card("Interview responses", f"{rows.shape[0]}", "Cleaned usable rows")
+    with k3:
+        metric_card("Years covered", f"{len(all_years)}", "2021 through 2025")
+    with k4:
+        metric_card("Archetypes", f"{players['archetype'].nunique()}", "Communication-style groupings")
 
-st.markdown("")
+    st.markdown("")
 
-tab_overview, tab_analytics, tab_regression, tab_log, tab_method, tab_data = st.tabs([
-    "Overview", "Analytics", "Regression", "Interview Log", "Methodology", "Data"
-])
+    tab_overview, tab_analytics, tab_regression, tab_log, tab_method, tab_data = st.tabs([
+        "Overview", "Analytics", "Regression", "Interview Log", "Methodology", "Data"
+    ])
 
 # --------------------------------------------------
 # TAB: OVERVIEW
@@ -503,10 +557,14 @@ with tab_overview:
             height=560,
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="#fffdf9",
-            font=dict(color="#6a3410"),
-            title_font=dict(color="#a54700"),
+            font=dict(color="#3d1f00", size=13),
+            title_font=dict(color="#a54700", size=15),
+            legend=dict(font=dict(size=12, color="#3d1f00")),
+            xaxis=dict(tickfont=dict(color="#3d1f00", size=12), title_font=dict(color="#3d1f00")),
+            yaxis=dict(tickfont=dict(color="#3d1f00", size=12), title_font=dict(color="#3d1f00")),
             margin=dict(l=20, r=20, t=60, b=20)
         )
+        fig_map.update_traces(textfont=dict(color="#3d1f00", size=12))
         st.plotly_chart(fig_map, use_container_width=True)
 
 # --------------------------------------------------
@@ -539,15 +597,18 @@ with tab_analytics:
     fig_style = px.bar(style_df, x="feature", y="value", title="Style signal profile")
     fig_style.update_layout(
         template="simple_white",
-        height=360,
+        height=400,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#fffdf9",
         xaxis_title="",
         yaxis_title="Value",
-        font=dict(color="#6a3410"),
-        title_font=dict(color="#a54700"),
-        margin=dict(l=20, r=20, t=60, b=20)
+        font=dict(color="#3d1f00", size=13),
+        title_font=dict(color="#a54700", size=15),
+        xaxis=dict(tickangle=-35, tickfont=dict(size=12, color="#3d1f00"), title_font=dict(color="#3d1f00")),
+        yaxis=dict(tickfont=dict(size=12, color="#3d1f00"), title_font=dict(color="#3d1f00")),
+        margin=dict(l=20, r=20, t=60, b=100)
     )
+    fig_style.update_traces(textfont=dict(color="#3d1f00"))
     st.plotly_chart(fig_style, use_container_width=True)
 
     col1, col2, col3 = st.columns(3)
@@ -562,8 +623,14 @@ with tab_analytics:
                 height=340,
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="#fffdf9",
-                font=dict(color="#6a3410"),
-                margin=dict(l=20, r=20, t=20, b=20)
+                font=dict(color="#3d1f00", size=12),
+                legend=dict(font=dict(size=11, color="#3d1f00")),
+                margin=dict(l=10, r=10, t=10, b=10)
+            )
+            fig_qmix.update_traces(
+                textfont=dict(size=12, color="#3d1f00"),
+                textinfo="percent+label",
+                insidetextorientation="radial"
             )
             st.plotly_chart(fig_qmix, use_container_width=True)
         else:
@@ -575,13 +642,15 @@ with tab_analytics:
             fig_box = px.box(player_rows, x="pred_question_type", y="word_count_final")
             fig_box.update_layout(
                 template="simple_white",
-                height=340,
+                height=360,
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="#fffdf9",
                 xaxis_title="",
                 yaxis_title="Word count",
-                font=dict(color="#6a3410"),
-                margin=dict(l=20, r=20, t=20, b=20)
+                font=dict(color="#3d1f00", size=12),
+                xaxis=dict(tickangle=-30, tickfont=dict(size=11, color="#3d1f00"), title_font=dict(color="#3d1f00")),
+                yaxis=dict(tickfont=dict(size=12, color="#3d1f00"), title_font=dict(color="#3d1f00")),
+                margin=dict(l=20, r=20, t=20, b=80)
             )
             st.plotly_chart(fig_box, use_container_width=True)
         else:
@@ -636,9 +705,11 @@ with tab_regression:
         height=460,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#fffdf9",
-        font=dict(color="#6a3410"),
-        title_font=dict(color="#a54700"),
-        margin=dict(l=20, r=20, t=60, b=20)
+        font=dict(color="#3d1f00", size=13),
+        title_font=dict(color="#a54700", size=15),
+        xaxis=dict(title="Actual word count", tickfont=dict(size=12, color="#3d1f00"), title_font=dict(color="#3d1f00")),
+        yaxis=dict(title="Predicted word count", tickfont=dict(size=12, color="#3d1f00"), title_font=dict(color="#3d1f00")),
+        margin=dict(l=60, r=20, t=60, b=60)
     )
     st.plotly_chart(fig_reg, use_container_width=True)
 
