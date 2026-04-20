@@ -2,7 +2,10 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import plotly.express as px
+import plotly.graph_objects as go
 from pathlib import Path
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 st.set_page_config(
     page_title="Texas Interview Intelligence",
@@ -231,19 +234,13 @@ st.markdown("""
     }
     .ctrl-label:first-child { margin-top: 0; }
 
-    /* toggle switch wrapper */
-    [data-testid="stToggle"] {
-        background: #fff0e2;
-        border: 1px solid rgba(191,87,0,0.22);
-        border-radius: 10px;
-        padding: 0.4rem 0.75rem;
-        display: inline-flex;
-        align-items: center;
-    }
-    [data-testid="stToggle"] label {
+    /* toggle button */
+    button[data-testid="baseButton-secondary"][kind="secondary"] {
+        background: #fff0e2 !important;
+        border: 1px solid rgba(191,87,0,0.3) !important;
         color: #bf5700 !important;
         font-weight: 700;
-        font-size: 0.85rem;
+        border-radius: 10px;
     }
 
     .navbar {
@@ -355,6 +352,35 @@ def load_data():
     return players, questions, rows, reg
 
 players, questions, rows, reg = load_data()
+
+PCA_STYLE_COLS = [
+    "n_responses", "n_seasons", "avg_word_count", "sd_word_count", "avg_pred_word_count",
+    "self_rate", "team_rate", "hedge_rate", "confidence_rate", "gratitude_rate",
+    "accountability_rate", "coachspeak_rate", "type_token_ratio",
+]
+
+def build_pca_loading_df(players_df):
+    sub = players_df[PCA_STYLE_COLS].copy()
+    sub = sub.dropna()
+    if len(sub) < 3:
+        return None, None
+    scaler = StandardScaler()
+    X = scaler.fit_transform(sub)
+    pca = PCA(n_components=2, random_state=42)
+    pca.fit(X)
+    comps = pca.components_          # shape (2, n_features)
+    df = pd.DataFrame({
+        "feature":  PCA_STYLE_COLS,
+        "pc1":      comps[0],
+        "pc2":      comps[1],
+    })
+    df["magnitude"] = np.sqrt(df["pc1"] ** 2 + df["pc2"] ** 2)
+    df["pc1_plot"] = df["pc1"] * 1.15
+    df["pc2_plot"] = df["pc2"] * 1.15
+    df = df.sort_values("magnitude", ascending=False).reset_index(drop=True)
+    return df, pca
+
+pca_loading_df, pca_style_model = build_pca_loading_df(players)
 
 # --------------------------------------------------
 # HELPERS
@@ -512,7 +538,8 @@ with col_main:
         """,
         unsafe_allow_html=True
     )
-
+    if not st.session_state.panel_open:
+        st.button("▶ Filters", on_click=toggle_panel)
 
     # --------------------------------------------------
     # KPI ROW
@@ -595,6 +622,86 @@ with tab_overview:
         )
         fig_map.update_traces(textfont=dict(color="#3d1f00", size=12))
         st.plotly_chart(fig_map, use_container_width=True)
+
+    # --------------------------------------------------
+    # PCA LOADING PLOT
+    # --------------------------------------------------
+    st.markdown('<div class="section-title" style="margin-top:1.2rem;">What drives PC1 and PC2?</div>', unsafe_allow_html=True)
+
+    if pca_loading_df is None:
+        st.warning("Not enough complete player rows to compute PCA loadings.")
+    else:
+        fig_load = go.Figure()
+
+        # zero axes
+        axis_range = [-0.75, 0.75]
+        fig_load.add_shape(type="line", x0=axis_range[0], x1=axis_range[1], y0=0, y1=0,
+                           line=dict(color="rgba(191,87,0,0.25)", width=1, dash="dot"))
+        fig_load.add_shape(type="line", x0=0, x1=0, y0=axis_range[0], y1=axis_range[1],
+                           line=dict(color="rgba(191,87,0,0.25)", width=1, dash="dot"))
+
+        for _, r in pca_loading_df.iterrows():
+            alpha = 0.45 + 0.55 * (r["magnitude"] / pca_loading_df["magnitude"].max())
+            color = f"rgba(191,87,0,{alpha:.2f})"
+            # arrow shaft
+            fig_load.add_annotation(
+                x=r["pc1_plot"], y=r["pc2_plot"],
+                ax=0, ay=0,
+                axref="x", ayref="y",
+                showarrow=True,
+                arrowhead=3, arrowsize=1.2, arrowwidth=2,
+                arrowcolor=color,
+            )
+            # label
+            fig_load.add_annotation(
+                x=r["pc1_plot"] * 1.08, y=r["pc2_plot"] * 1.08,
+                text=r["feature"].replace("_rate", "").replace("_", " "),
+                showarrow=False,
+                font=dict(size=11, color="#3d1f00"),
+                xanchor="center",
+            )
+
+        fig_load.update_layout(
+            template="simple_white",
+            height=480,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#fffdf9",
+            font=dict(color="#3d1f00", size=13),
+            xaxis=dict(
+                title="PC1 loading",
+                range=axis_range,
+                zeroline=False,
+                tickfont=dict(color="#3d1f00", size=12),
+                title_font=dict(color="#3d1f00"),
+            ),
+            yaxis=dict(
+                title="PC2 loading",
+                range=axis_range,
+                zeroline=False,
+                tickfont=dict(color="#3d1f00", size=12),
+                title_font=dict(color="#3d1f00"),
+            ),
+            margin=dict(l=40, r=40, t=30, b=40),
+        )
+        st.plotly_chart(fig_load, use_container_width=True)
+
+        t1, t2 = st.columns(2)
+        with t1:
+            st.markdown('<div class="section-title" style="font-size:0.95rem;">Top PC1 drivers</div>', unsafe_allow_html=True)
+            top_pc1 = (pca_loading_df[["feature", "pc1"]]
+                       .reindex(pca_loading_df["pc1"].abs().sort_values(ascending=False).index)
+                       .head(5)
+                       .reset_index(drop=True))
+            top_pc1["pc1"] = top_pc1["pc1"].map(lambda v: f"{v:.3f}")
+            st.dataframe(top_pc1, use_container_width=True, hide_index=True)
+        with t2:
+            st.markdown('<div class="section-title" style="font-size:0.95rem;">Top PC2 drivers</div>', unsafe_allow_html=True)
+            top_pc2 = (pca_loading_df[["feature", "pc2"]]
+                       .reindex(pca_loading_df["pc2"].abs().sort_values(ascending=False).index)
+                       .head(5)
+                       .reset_index(drop=True))
+            top_pc2["pc2"] = top_pc2["pc2"].map(lambda v: f"{v:.3f}")
+            st.dataframe(top_pc2, use_container_width=True, hide_index=True)
 
 # --------------------------------------------------
 # TAB: ANALYTICS
@@ -703,80 +810,6 @@ with tab_analytics:
             st.dataframe(comp[["player_name", "archetype", "similarity"]].reset_index(drop=True), use_container_width=True, height=340)
         else:
             st.warning("Not enough feature data.")
-
-    # --------------------------------------------------
-    # COMPARE PLAYERS
-    # --------------------------------------------------
-    st.markdown("---")
-    st.markdown('<div class="section-title">Compare players</div>', unsafe_allow_html=True)
-
-    compare_style_cols = [
-        "self_rate", "team_rate", "hedge_rate", "confidence_rate",
-        "gratitude_rate", "accountability_rate", "coachspeak_rate", "type_token_ratio"
-    ]
-    compare_labels = [
-        "Self focus", "Team focus", "Hedge language", "Confidence",
-        "Gratitude", "Accountability", "Coach-speak", "Vocab diversity"
-    ]
-
-    other_players = [p for p in player_list if p != selected_player]
-    compare_with = st.multiselect(
-        "Select players to compare against",
-        other_players,
-        default=[],
-        placeholder="Pick one or more players…"
-    )
-
-    if compare_with:
-        compare_pool = [selected_player] + compare_with
-        compare_rows = players[players["player_name"].isin(compare_pool)].copy()
-
-        long_rows = []
-        for _, row in compare_rows.iterrows():
-            for col, label in zip(compare_style_cols, compare_labels):
-                if col in row:
-                    long_rows.append({
-                        "Player": row["player_name"],
-                        "Signal": label,
-                        "Value": float(row[col])
-                    })
-        compare_df = pd.DataFrame(long_rows)
-
-        fig_compare = px.bar(
-            compare_df,
-            x="Signal",
-            y="Value",
-            color="Player",
-            barmode="group",
-            title=f"{selected_player} vs. {', '.join(compare_with)}"
-        )
-        fig_compare.update_layout(
-            template="simple_white",
-            height=420,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="#fffdf9",
-            font=dict(color="#3d1f00", size=13),
-            title_font=dict(color="#a54700", size=15),
-            legend=dict(font=dict(size=12, color="#3d1f00"), title_text=""),
-            xaxis=dict(tickangle=-30, tickfont=dict(size=12, color="#3d1f00"), title_font=dict(color="#3d1f00")),
-            yaxis=dict(tickfont=dict(size=12, color="#3d1f00"), title_font=dict(color="#3d1f00"), title=""),
-            margin=dict(l=20, r=20, t=60, b=100)
-        )
-        fig_compare.update_traces(textfont=dict(color="#3d1f00"))
-        st.plotly_chart(fig_compare, use_container_width=True)
-
-        st.markdown('<div class="section-title" style="margin-top:0.5rem;">Side-by-side stats</div>', unsafe_allow_html=True)
-        stat_cols = ["player_name", "archetype", "avg_word_count", "n_responses"] + compare_style_cols
-        stat_cols = [c for c in stat_cols if c in players.columns]
-        stat_df = players[players["player_name"].isin(compare_pool)][stat_cols].copy()
-        stat_df = stat_df.rename(columns={"player_name": "Player", "archetype": "Archetype",
-                                           "avg_word_count": "Avg words", "n_responses": "Responses",
-                                           **dict(zip(compare_style_cols, compare_labels))})
-        stat_df = stat_df.set_index("Player")
-        st.dataframe(stat_df.style.format({l: "{:.4f}" for l in compare_labels} | {"Avg words": "{:.1f}"}),
-                     use_container_width=True)
-    else:
-        st.caption("Select at least one player above to see the comparison.")
 
 # --------------------------------------------------
 # TAB: REGRESSION
