@@ -857,19 +857,20 @@ with tab_analytics:
     st.markdown("---")
     st.markdown('<div class="section-title">Season trends</div>', unsafe_allow_html=True)
 
-    trend_cols = ["avg_word_count", "self_rate", "team_rate", "confidence_rate", "accountability_rate"]
-    trend_labels = {"avg_word_count": "Avg words", "self_rate": "Self rate",
+    trend_cols = ["word_count_final", "self_rate", "team_rate", "confidence_rate", "accountability_rate"]
+    trend_labels = {"word_count_final": "Avg words", "self_rate": "Self rate",
                     "team_rate": "Team rate", "confidence_rate": "Confidence",
                     "accountability_rate": "Accountability"}
 
     if not player_rows.empty and "season" in player_rows.columns:
+        avail_trend_cols = [c for c in trend_cols if c in player_rows.columns]
         season_agg = (player_rows.dropna(subset=["season"])
-                      .groupby("season")[trend_cols].mean().reset_index())
+                      .groupby("season")[avail_trend_cols].mean().reset_index())
         season_agg["season"] = season_agg["season"].astype(int)
         if len(season_agg) >= 2:
             tr1, tr2 = st.columns(2)
             with tr1:
-                fig_wc = px.line(season_agg, x="season", y="avg_word_count",
+                fig_wc = px.line(season_agg, x="season", y="word_count_final",
                                  markers=True, title="Avg answer length by season")
                 fig_wc.update_layout(
                     template="simple_white", height=300,
@@ -884,9 +885,11 @@ with tab_analytics:
                 )
                 st.plotly_chart(fig_wc, use_container_width=True)
             with tr2:
+                rate_vars = [c for c in ["self_rate", "team_rate", "confidence_rate", "accountability_rate"]
+                             if c in season_agg.columns]
                 rate_long = season_agg.melt(
                     id_vars="season",
-                    value_vars=["self_rate", "team_rate", "confidence_rate", "accountability_rate"],
+                    value_vars=rate_vars,
                     var_name="metric", value_name="value"
                 )
                 rate_long["metric"] = rate_long["metric"].map(trend_labels)
