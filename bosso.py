@@ -564,64 +564,60 @@ with col_main:
 # TAB: OVERVIEW
 # --------------------------------------------------
 with tab_overview:
-    left, right = st.columns([1.1, 1])
-
-    with left:
-        callouts = style_callouts(profile)
-        callout_items = "".join([f"<li>{x}</li>" for x in callouts])
-        st.markdown(
-            f"""
-            <div class="card">
-                <div class="pill">{profile["archetype"]}</div>
-                <div class="profile-name">{selected_player}</div>
-                <div class="subtle">
-                    <strong>{profile["n_responses"]}</strong> filtered responses across
-                    <strong>{profile["n_seasons"]}</strong> season(s). Most common question context:
-                    <strong>{profile["dominant_question_type"]}</strong>.
-                </div>
-                <div class="subtle" style="margin-top:0.9rem;">{archetype_description(profile["archetype"])}</div>
-                <div class="section-title" style="margin-top:1rem;">Scouting readout</div>
-                <ul class="callout-list">{callout_items}</ul>
+    callouts = style_callouts(profile)
+    callout_items = "".join([f"<li>{x}</li>" for x in callouts])
+    st.markdown(
+        f"""
+        <div class="card">
+            <div class="pill">{profile["archetype"]}</div>
+            <div class="profile-name">{selected_player}</div>
+            <div class="subtle">
+                <strong>{profile["n_responses"]}</strong> filtered responses across
+                <strong>{profile["n_seasons"]}</strong> season(s). Most common question context:
+                <strong>{profile["dominant_question_type"]}</strong>.
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+            <div class="subtle" style="margin-top:0.9rem;">{archetype_description(profile["archetype"])}</div>
+            <div class="section-title" style="margin-top:1rem;">Scouting readout</div>
+            <ul class="callout-list">{callout_items}</ul>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    with right:
-        fig_map = px.scatter(
-            players,
-            x="pc1",
-            y="pc2",
-            color="archetype",
-            size="n_responses",
-            hover_name="player_name",
-            hover_data=["avg_word_count", "n_seasons", "dominant_question_type"],
-            title="Communication archetype map"
-        )
-        sel = players[players["player_name"] == selected_player]
-        fig_map.add_scatter(
-            x=sel["pc1"],
-            y=sel["pc2"],
-            mode="markers+text",
-            text=sel["player_name"],
-            textposition="top center",
-            marker=dict(size=24, symbol="diamond"),
-            name="Selected player"
-        )
-        fig_map.update_layout(
-            template="simple_white",
-            height=560,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="#fffdf9",
-            font=dict(color="#3d1f00", size=13),
-            title_font=dict(color="#a54700", size=15),
-            legend=dict(font=dict(size=12, color="#3d1f00")),
-            xaxis=dict(tickfont=dict(color="#3d1f00", size=12), title_font=dict(color="#3d1f00")),
-            yaxis=dict(tickfont=dict(color="#3d1f00", size=12), title_font=dict(color="#3d1f00")),
-            margin=dict(l=20, r=20, t=60, b=20)
-        )
-        fig_map.update_traces(textfont=dict(color="#3d1f00", size=12))
-        st.plotly_chart(fig_map, use_container_width=True)
+    fig_map = px.scatter(
+        players,
+        x="pc1",
+        y="pc2",
+        color="archetype",
+        size="n_responses",
+        hover_name="player_name",
+        hover_data=["avg_word_count", "n_seasons", "dominant_question_type"],
+        title="Communication archetype map"
+    )
+    sel = players[players["player_name"] == selected_player]
+    fig_map.add_scatter(
+        x=sel["pc1"],
+        y=sel["pc2"],
+        mode="markers+text",
+        text=sel["player_name"],
+        textposition="top center",
+        marker=dict(size=24, symbol="diamond"),
+        name="Selected player"
+    )
+    fig_map.update_layout(
+        template="simple_white",
+        height=560,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#fffdf9",
+        font=dict(color="#3d1f00", size=13),
+        title_font=dict(color="#a54700", size=15),
+        legend=dict(font=dict(size=12, color="#3d1f00")),
+        xaxis=dict(tickfont=dict(color="#3d1f00", size=12), title_font=dict(color="#3d1f00")),
+        yaxis=dict(tickfont=dict(color="#3d1f00", size=12), title_font=dict(color="#3d1f00")),
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+    fig_map.update_traces(textfont=dict(color="#3d1f00", size=12))
+    st.plotly_chart(fig_map, use_container_width=True)
 
     # --------------------------------------------------
     # PCA LOADING PLOT
