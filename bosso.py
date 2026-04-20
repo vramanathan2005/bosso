@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 st.set_page_config(
     page_title="Texas Interview Intelligence",
@@ -556,8 +557,8 @@ with col_main:
 
     st.markdown("")
 
-    tab_overview, tab_analytics, tab_regression, tab_log, tab_method, tab_data = st.tabs([
-        "Overview", "Analytics", "Regression", "Interview Log", "Methodology", "Data"
+    tab_overview, tab_analytics, tab_roster, tab_regression, tab_log, tab_method, tab_data = st.tabs([
+        "Overview", "Analytics", "Roster", "Regression", "Interview Log", "Methodology", "Data"
     ])
 
 # --------------------------------------------------
@@ -699,6 +700,49 @@ with tab_overview:
             top_pc2["pc2"] = top_pc2["pc2"].map(lambda v: f"{v:.3f}")
             st.dataframe(top_pc2, use_container_width=True, hide_index=True)
 
+    # --------------------------------------------------
+    # RADAR: style by question type
+    # --------------------------------------------------
+    st.markdown("---")
+    st.markdown('<div class="section-title" style="margin-top:0.5rem;">Style profile by question type</div>', unsafe_allow_html=True)
+
+    radar_cols = ["self_rate", "team_rate", "hedge_rate", "confidence_rate",
+                  "accountability_rate", "coachspeak_rate"]
+    radar_labels = ["Self", "Team", "Hedge", "Confidence", "Accountability", "Coach-speak"]
+
+    if not player_rows.empty and "pred_question_type" in player_rows.columns:
+        qtypes_present = sorted(player_rows["pred_question_type"].dropna().unique())
+        radar_data = (player_rows.groupby("pred_question_type")[radar_cols].mean()
+                      .reindex(qtypes_present))
+        fig_radar = go.Figure()
+        for qtype in qtypes_present:
+            vals = radar_data.loc[qtype, radar_cols].tolist()
+            vals += [vals[0]]
+            fig_radar.add_trace(go.Scatterpolar(
+                r=vals,
+                theta=radar_labels + [radar_labels[0]],
+                fill="toself",
+                name=qtype,
+                opacity=0.6,
+            ))
+        fig_radar.update_layout(
+            polar=dict(
+                bgcolor="#fffdf9",
+                radialaxis=dict(visible=True, tickfont=dict(color="#3d1f00", size=10),
+                                gridcolor="rgba(191,87,0,0.15)"),
+                angularaxis=dict(tickfont=dict(color="#3d1f00", size=12),
+                                 gridcolor="rgba(191,87,0,0.15)"),
+            ),
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#3d1f00", size=13),
+            legend=dict(font=dict(size=12, color="#3d1f00")),
+            height=420,
+            margin=dict(l=40, r=40, t=30, b=30),
+        )
+        st.plotly_chart(fig_radar, use_container_width=True)
+    else:
+        st.caption("Not enough filtered data to build the radar chart.")
+
 # --------------------------------------------------
 # TAB: ANALYTICS
 # --------------------------------------------------
@@ -806,6 +850,97 @@ with tab_analytics:
             st.dataframe(comp[["player_name", "archetype", "similarity"]].reset_index(drop=True), use_container_width=True, height=340)
         else:
             st.warning("Not enough feature data.")
+
+    # --------------------------------------------------
+    # SEASON TRENDS
+    # --------------------------------------------------
+    st.markdown("---")
+    st.markdown('<div class="section-title">Season trends</div>', unsafe_allow_html=True)
+
+    trend_cols = ["avg_word_count", "self_rate", "team_rate", "confidence_rate", "accountability_rate"]
+    trend_labels = {"avg_word_count": "Avg words", "self_rate": "Self rate",
+                    "team_rate": "Team rate", "confidence_rate": "Confidence",
+                    "accountability_rate": "Accountability"}
+
+    if not player_rows.empty and "season" in player_rows.columns:
+        season_agg = (player_rows.dropna(subset=["season"])
+                      .groupby("season")[trend_cols].mean().reset_index())
+        season_agg["season"] = season_agg["season"].astype(int)
+        if len(season_agg) >= 2:
+            tr1, tr2 = st.columns(2)
+            with tr1:
+                fig_wc = px.line(season_agg, x="season", y="avg_word_count",
+                                 markers=True, title="Avg answer length by season")
+                fig_wc.update_layout(
+                    template="simple_white", height=300,
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fffdf9",
+                    font=dict(color="#3d1f00", size=12),
+                    title_font=dict(color="#a54700", size=14),
+                    xaxis=dict(tickfont=dict(color="#3d1f00"), title="Season",
+                               title_font=dict(color="#3d1f00"), dtick=1),
+                    yaxis=dict(tickfont=dict(color="#3d1f00"), title="Words",
+                               title_font=dict(color="#3d1f00")),
+                    margin=dict(l=20, r=20, t=50, b=40),
+                )
+                st.plotly_chart(fig_wc, use_container_width=True)
+            with tr2:
+                rate_long = season_agg.melt(
+                    id_vars="season",
+                    value_vars=["self_rate", "team_rate", "confidence_rate", "accountability_rate"],
+                    var_name="metric", value_name="value"
+                )
+                rate_long["metric"] = rate_long["metric"].map(trend_labels)
+                fig_rates = px.line(rate_long, x="season", y="value", color="metric",
+                                    markers=True, title="Language rates by season")
+                fig_rates.update_layout(
+                    template="simple_white", height=300,
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fffdf9",
+                    font=dict(color="#3d1f00", size=12),
+                    title_font=dict(color="#a54700", size=14),
+                    legend=dict(font=dict(size=11, color="#3d1f00"), title_text=""),
+                    xaxis=dict(tickfont=dict(color="#3d1f00"), title="Season",
+                               title_font=dict(color="#3d1f00"), dtick=1),
+                    yaxis=dict(tickfont=dict(color="#3d1f00"), title="Rate",
+                               title_font=dict(color="#3d1f00")),
+                    margin=dict(l=20, r=20, t=50, b=40),
+                )
+                st.plotly_chart(fig_rates, use_container_width=True)
+        else:
+            st.caption("Need at least two seasons of data to show trends.")
+    else:
+        st.caption("No season data available for this player.")
+
+    # --------------------------------------------------
+    # RESPONSE LENGTH OVER TIME
+    # --------------------------------------------------
+    st.markdown('<div class="section-title" style="margin-top:0.5rem;">Response length over time</div>', unsafe_allow_html=True)
+
+    if not player_rows.empty and "interview_date" in player_rows.columns:
+        timed = player_rows.dropna(subset=["interview_date", "word_count_final"]).copy()
+        if not timed.empty:
+            fig_time = px.scatter(
+                timed, x="interview_date", y="word_count_final",
+                color="pred_question_type" if "pred_question_type" in timed.columns else None,
+                hover_data=["season"] if "season" in timed.columns else None,
+                title="Word count per response over time",
+            )
+            fig_time.update_layout(
+                template="simple_white", height=340,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fffdf9",
+                font=dict(color="#3d1f00", size=12),
+                title_font=dict(color="#a54700", size=14),
+                legend=dict(font=dict(size=11, color="#3d1f00"), title_text="Question type"),
+                xaxis=dict(tickfont=dict(color="#3d1f00"), title="Date",
+                           title_font=dict(color="#3d1f00")),
+                yaxis=dict(tickfont=dict(color="#3d1f00"), title="Word count",
+                           title_font=dict(color="#3d1f00")),
+                margin=dict(l=20, r=20, t=50, b=40),
+            )
+            st.plotly_chart(fig_time, use_container_width=True)
+        else:
+            st.caption("No dated responses available under the current filter.")
+    else:
+        st.caption("No interview_date column found in the data.")
 
     # --------------------------------------------------
     # COMPARE PLAYERS
@@ -918,6 +1053,155 @@ with tab_regression:
         margin=dict(l=60, r=20, t=60, b=60)
     )
     st.plotly_chart(fig_reg, use_container_width=True)
+
+# --------------------------------------------------
+# TAB: ROSTER
+# --------------------------------------------------
+with tab_roster:
+    heatmap_cols = ["self_rate", "team_rate", "hedge_rate", "confidence_rate",
+                    "gratitude_rate", "accountability_rate", "coachspeak_rate", "type_token_ratio"]
+    heatmap_labels = ["Self", "Team", "Hedge", "Confidence",
+                      "Gratitude", "Accountability", "Coach-speak", "Vocab div."]
+
+    roster_heat = players[["player_name"] + heatmap_cols].dropna().copy()
+
+    # --------------------------------------------------
+    # HEATMAP
+    # --------------------------------------------------
+    st.markdown('<div class="section-title">Roster style heatmap</div>', unsafe_allow_html=True)
+    if not roster_heat.empty:
+        z = roster_heat[heatmap_cols].values
+        z_norm = (z - z.mean(axis=0)) / (z.std(axis=0) + 1e-9)   # z-score per column
+        fig_heat = go.Figure(go.Heatmap(
+            z=z_norm,
+            x=heatmap_labels,
+            y=roster_heat["player_name"].tolist(),
+            colorscale=[[0, "#f7efe2"], [0.5, "#e08040"], [1, "#7a2e00"]],
+            hoverongaps=False,
+            hovertemplate="<b>%{y}</b><br>%{x}: %{z:.2f} (z-score)<extra></extra>",
+            showscale=True,
+        ))
+        fig_heat.update_layout(
+            template="simple_white",
+            height=max(400, 22 * len(roster_heat)),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#fffdf9",
+            font=dict(color="#3d1f00", size=12),
+            xaxis=dict(tickfont=dict(color="#3d1f00", size=12), side="top"),
+            yaxis=dict(tickfont=dict(color="#3d1f00", size=11), autorange="reversed"),
+            margin=dict(l=160, r=20, t=60, b=20),
+        )
+        st.plotly_chart(fig_heat, use_container_width=True)
+        st.caption("Values are z-scored per column — colour shows how each player compares to the roster average.")
+    else:
+        st.warning("Not enough player data for the heatmap.")
+
+    st.markdown("---")
+
+    # --------------------------------------------------
+    # TEAM SEASON AGGREGATE
+    # --------------------------------------------------
+    st.markdown('<div class="section-title">Team communication by season</div>', unsafe_allow_html=True)
+    team_trend_cols = ["word_count_final", "self_rate", "team_rate",
+                       "confidence_rate", "accountability_rate", "coachspeak_rate"]
+    team_trend_labels = {"word_count_final": "Avg words", "self_rate": "Self",
+                         "team_rate": "Team", "confidence_rate": "Confidence",
+                         "accountability_rate": "Accountability", "coachspeak_rate": "Coach-speak"}
+
+    if "season" in rows.columns:
+        team_agg = (rows.dropna(subset=["season"])
+                    .groupby("season")[team_trend_cols].mean().reset_index())
+        team_agg["season"] = team_agg["season"].astype(int)
+
+        ta1, ta2 = st.columns(2)
+        with ta1:
+            fig_twc = px.bar(team_agg, x="season", y="word_count_final",
+                             title="Team avg answer length by season")
+            fig_twc.update_layout(
+                template="simple_white", height=320,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fffdf9",
+                font=dict(color="#3d1f00", size=12),
+                title_font=dict(color="#a54700", size=14),
+                xaxis=dict(tickfont=dict(color="#3d1f00"), title="Season",
+                           title_font=dict(color="#3d1f00"), dtick=1),
+                yaxis=dict(tickfont=dict(color="#3d1f00"), title="Words",
+                           title_font=dict(color="#3d1f00")),
+                margin=dict(l=20, r=20, t=50, b=40),
+            )
+            st.plotly_chart(fig_twc, use_container_width=True)
+        with ta2:
+            team_long = team_agg.melt(
+                id_vars="season",
+                value_vars=["self_rate", "team_rate", "confidence_rate", "accountability_rate", "coachspeak_rate"],
+                var_name="metric", value_name="value"
+            )
+            team_long["metric"] = team_long["metric"].map(team_trend_labels)
+            fig_trates = px.line(team_long, x="season", y="value", color="metric",
+                                 markers=True, title="Team language rates by season")
+            fig_trates.update_layout(
+                template="simple_white", height=320,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fffdf9",
+                font=dict(color="#3d1f00", size=12),
+                title_font=dict(color="#a54700", size=14),
+                legend=dict(font=dict(size=11, color="#3d1f00"), title_text=""),
+                xaxis=dict(tickfont=dict(color="#3d1f00"), title="Season",
+                           title_font=dict(color="#3d1f00"), dtick=1),
+                yaxis=dict(tickfont=dict(color="#3d1f00"), title="Rate",
+                           title_font=dict(color="#3d1f00")),
+                margin=dict(l=20, r=20, t=50, b=40),
+            )
+            st.plotly_chart(fig_trates, use_container_width=True)
+    else:
+        st.caption("No season column found in row-level data.")
+
+    st.markdown("---")
+
+    # --------------------------------------------------
+    # CHARACTERISTIC PHRASES
+    # --------------------------------------------------
+    st.markdown('<div class="section-title">Most characteristic language per player</div>', unsafe_allow_html=True)
+    st.caption("Top unigrams/bigrams for each player relative to the rest of the roster (TF-IDF).")
+
+    if "cleaned_player_answer_text" in rows.columns and "player_name" in rows.columns:
+        corpus_df = (rows.groupby("player_name")["cleaned_player_answer_text"]
+                     .apply(lambda x: " ".join(x.dropna().astype(str)))
+                     .reset_index())
+        corpus_df.columns = ["player_name", "text"]
+        corpus_df = corpus_df[corpus_df["text"].str.len() > 20]
+
+        if len(corpus_df) >= 2:
+            tfidf = TfidfVectorizer(max_features=300, ngram_range=(1, 2), stop_words="english", min_df=1)
+            tfidf_mat = tfidf.fit_transform(corpus_df["text"])
+            vocab = tfidf.get_feature_names_out()
+
+            phrase_search = st.selectbox("Player", corpus_df["player_name"].tolist(),
+                                         key="phrase_player", label_visibility="visible")
+            idx = corpus_df[corpus_df["player_name"] == phrase_search].index[0]
+            local_idx = corpus_df.index.get_loc(idx)
+            scores = tfidf_mat[local_idx].toarray().ravel()
+            top_idx = scores.argsort()[::-1][:15]
+            phrase_df = pd.DataFrame({"phrase": vocab[top_idx], "score": scores[top_idx]})
+
+            fig_phrases = px.bar(phrase_df, x="score", y="phrase", orientation="h",
+                                 title=f"Signature language — {phrase_search}")
+            fig_phrases.update_layout(
+                template="simple_white", height=420,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fffdf9",
+                font=dict(color="#3d1f00", size=12),
+                title_font=dict(color="#a54700", size=14),
+                xaxis=dict(tickfont=dict(color="#3d1f00"), title="TF-IDF score",
+                           title_font=dict(color="#3d1f00")),
+                yaxis=dict(tickfont=dict(color="#3d1f00"), title="",
+                           autorange="reversed"),
+                margin=dict(l=140, r=20, t=50, b=40),
+            )
+            fig_phrases.update_traces(marker_color="#bf5700",
+                                      textfont=dict(color="#3d1f00"))
+            st.plotly_chart(fig_phrases, use_container_width=True)
+        else:
+            st.caption("Not enough player text data.")
+    else:
+        st.caption("Required columns not found.")
 
 # --------------------------------------------------
 # TAB: INTERVIEW LOG
